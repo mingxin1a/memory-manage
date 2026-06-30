@@ -195,6 +195,34 @@ def cmd_snapshot(args):
     print(f"git 快照: {h or '(无变更或 git 不可用)'}")
 
 
+def cmd_snapshots(args):
+    snaps = gitbackup.list_snapshots(limit=args.k)
+    if not snaps:
+        print("(暂无快照; 用 memmgr snapshot \"说明\" 打一个)")
+        return
+    print(f"快照历史(最新在前) {len(snaps)} 个:")
+    for s in snaps:
+        print(f"  {s['hash']}  {s['date']}  {s['msg']}")
+
+
+def cmd_restore_snapshot(args):
+    con = _con()
+    dry = not args.apply
+    res = gitbackup.restore_snapshot(ref=args.ref, dry_run=dry)
+    if res.get("error"):
+        print("错误:", res["error"]); return
+    ch = res["changed"]
+    verb = "将还原(dry-run, 加 --apply 执行)" if dry else "已还原"
+    print(f"快照 {res['ref']} 含 {res['snapshot_files']} 个文件; {verb} {len(ch)} 处变更:")
+    for c in ch[:args.k]:
+        print(f"  [{c['kind']:9}] {c['path']}")
+    if len(ch) > args.k:
+        print(f"  … 其余 {len(ch)-args.k} 处")
+    if not dry:
+        index.rebuild(con)
+        print("索引已重建。")
+
+
 def cmd_panel(args):
     import subprocess
     from pathlib import Path
@@ -242,6 +270,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("undo"); sp.add_argument("op_id", nargs="?"); sp.set_defaults(func=cmd_undo)
     sp = sub.add_parser("log"); sp.add_argument("-k", type=int, default=30); sp.set_defaults(func=cmd_log)
     sp = sub.add_parser("snapshot"); sp.add_argument("message"); sp.set_defaults(func=cmd_snapshot)
+    sp = sub.add_parser("snapshots"); sp.add_argument("-k", type=int, default=30); sp.set_defaults(func=cmd_snapshots)
+    sp = sub.add_parser("restore-snapshot")
+    sp.add_argument("ref", nargs="?", default="HEAD", help="快照 ref(默认 HEAD 最新); 用 snapshots 查历史哈希")
+    sp.add_argument("--apply", action="store_true", help="真正写回(缺省只 dry-run 预览)")
+    sp.add_argument("-k", type=int, default=40)
+    sp.set_defaults(func=cmd_restore_snapshot)
     sub.add_parser("panel").set_defaults(func=cmd_panel)
     return p
 

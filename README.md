@@ -55,7 +55,9 @@ todos                 列所有待办(todo)
 classify [--apply]    启发式推断 nature/volatility(默认 dry-run)
 undo [op_id]          撤销操作(缺省撤最近一条)
 log                   操作日志
-snapshot <msg>        手动 git 快照
+snapshot <msg>        手动打一个 git 快照(本地, 全量镜像)
+snapshots             列快照历史(每个 commit 一个还原点)
+restore-snapshot [ref] [--apply]   从快照还原记忆(默认 HEAD; 缺省 dry-run 预览)
 ```
 
 ## 接入 Claude Code（hooks）
@@ -76,7 +78,9 @@ snapshot <msg>        手动 git 快照
 - **归档会复活**：归档记忆仍参与检索，被强命中自动提回 active。
 - **锁定免疫**：`pin` 的记忆任何自动机制都不碰。
 - **可撤销**：每步操作进日志，`undo` 逆向还原。
-- **git 兜底**：批量/会话结束自动快照到 `~/.claude/memory-manager/backup`，可 `git log` 回溯。
+- **git 兜底**：批量/会话结束自动快照到本地仓库 `~/.claude/memory-manager/backup`（**无远端、不出本机**）。
+  工作区覆盖成最新、但每次快照是独立 commit（历史并存），`memmgr restore-snapshot [ref]` 可从任意快照加性还原（不误删快照后新增的记忆）。
+  注意：这是**单一本地副本**——能防误删误改，防不了删整个备份目录或换机/坏盘，要抗灾需另配异地备份。
 
 ## 数据位置
 
