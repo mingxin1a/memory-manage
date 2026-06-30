@@ -226,9 +226,11 @@ def cmd_restore_snapshot(args):
 def cmd_panel(args):
     import subprocess
     from pathlib import Path
-    app = Path(__file__).parent.parent / "panel" / "app.py"
+    root = Path(__file__).parent.parent           # 项目根(含 .streamlit/config.toml)
+    app = root / "panel" / "app.py"
     print(f"启动面板: streamlit run {app}")
-    subprocess.run([sys.executable, "-m", "streamlit", "run", str(app)])
+    # 从项目根启动, 确保 .streamlit/config.toml 主题被加载
+    subprocess.run([sys.executable, "-m", "streamlit", "run", str(app)], cwd=str(root))
 
 
 def build_parser() -> argparse.ArgumentParser:
