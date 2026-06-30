@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memmgr"
+version = "0.1.0"
+description = "跨项目 Claude 记忆管理: 索引/检索/治理/可视化, 取代全量加载 MEMORY.md"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "streamlit>=1.30",
+]
+
+[project.optional-dependencies]
+# 仅当开启会话结束 LLM 自动抽取(MEMMGR_AUTO_EXTRACT=1)时需要
+extract = ["anthropic>=0.40"]
+
+[project.scripts]
+memmgr = "memmgr.cli:main"
+
+[tool.setuptools]
+packages = ["memmgr"]

@@ -24,7 +24,7 @@ import argparse
 import sys
 
 from . import config as C
-from . import index, lifecycle, retrieval, ops, gitbackup
+from . import index, lifecycle, retrieval, ops, gitbackup, status
 
 
 def _con():
@@ -38,6 +38,14 @@ def cmd_scan(args):
           f"trash={st['trash']} errors={len(st['errors'])}")
     for e in st["errors"][:10]:
         print("  ERR", e)
+
+
+def cmd_status(args):
+    con = _con()
+    status.run(con,
+               as_json=getattr(args, "json", False),
+               watch=getattr(args, "watch", 0) or 0,
+               full=not getattr(args, "fast", False))
 
 
 def cmd_stats(args):
@@ -197,7 +205,15 @@ def cmd_panel(args):
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="memmgr", description="跨项目 Claude 记忆管理")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    # 裸 `memmgr` 默认显示 status(像 abtop 一跑就看全局)
+    p.set_defaults(func=cmd_status, json=False, watch=0, fast=False)
+    sub = p.add_subparsers(dest="cmd")
+
+    sp = sub.add_parser("status", help="终端健康仪表盘(默认命令)")
+    sp.add_argument("--json", action="store_true", help="机器可读输出")
+    sp.add_argument("--watch", type=int, default=0, metavar="N", help="每 N 秒刷新")
+    sp.add_argument("--fast", action="store_true", help="跳过昂贵的重复检测")
+    sp.set_defaults(func=cmd_status)
 
     sub.add_parser("scan").set_defaults(func=cmd_scan)
     sub.add_parser("stats").set_defaults(func=cmd_stats)

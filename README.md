@@ -8,31 +8,35 @@
 ## 安装
 
 ```powershell
-pip install -r requirements.txt   # pyyaml + streamlit
+pip install -e .     # 安装为 memmgr 命令(含 pyyaml + streamlit)
 ```
 
-无需安装本包，直接在项目根目录用 `python -m memmgr ...`。
+装好后直接用 `memmgr`（不用再敲 `python -m memmgr`）。未安装也可在项目根用 `python -m memmgr`。
 
 ## 三件套
 
 | 能力 | 入口 | 作用 |
 |------|------|------|
-| 管理后台 | `python -m memmgr panel` | 可视化：总览/检索/归档回收站/去重/提升全局 |
-| 命令行 | `python -m memmgr <cmd>` | 脚本化操作，见下 |
+| 状态总览 | `memmgr`（裸命令）/ `memmgr status` | glance 式终端健康仪表盘 |
+| 管理后台 | `memmgr panel` | 可视化：总览/检索/待办/分类/归档回收站/去重 |
+| 命令行 | `memmgr <cmd>` | 脚本化操作，见下 |
 | 运行时增强 | 两个 hook | 动态召回注入 + 会话结束维护 |
 
 ## 快速开始
 
 ```powershell
-python -m memmgr scan                 # 扫描所有项目, 建中央索引
-python -m memmgr stats                # 总览 + 健康度(重复/久未命中)
-python -m memmgr search "MCP windows" # 跨项目混合检索
-python -m memmgr panel                # 打开可视化面板
+memmgr                       # 一眼看全局(默认=status)
+memmgr status --json         # 机器可读(可接 cron/告警)
+memmgr status --watch 5      # 每 5s 刷新
+memmgr scan                  # 扫描所有项目, 建中央索引
+memmgr search "MCP windows"  # 跨项目混合检索
+memmgr panel                 # 打开可视化面板
 ```
 
 ## 常用命令
 
 ```
+status [--json|--watch N|--fast]  终端健康仪表盘(裸 memmgr 即此)
 scan                  重建索引(从所有 .md 文件)
 stats                 总览统计 + 健康度
 search <q> [-k N]     混合检索(FTS5 + 关键词 + 链接扩展)
