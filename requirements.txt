@@ -1,0 +1,4 @@
+pyyaml>=6.0
+streamlit>=1.30
+# 可选: 仅当开启会话结束 LLM 自动抽取(MEMMGR_AUTO_EXTRACT=1)时需要
+# anthropic>=0.40

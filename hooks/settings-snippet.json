@@ -1,0 +1,25 @@
+{
+  "_说明": "把下面 hooks 块合并进 ~/.claude/settings.json (用户级, 对所有项目生效)。已有 hooks 则把数组项追加进去, 不要整体覆盖。Windows 路径用双反斜杠。",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"D:\\work\\memorymanage\\hooks\\recall.py\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"D:\\work\\memorymanage\\hooks\\extract.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 本工具运行时数据(不应入库, 属于用户本机 ~/.claude)
+*.db
+index.db
+
+# 本地harness配置
+.claude/settings.local.json
+
+# 操作系统
+.DS_Store
+Thumbs.db
