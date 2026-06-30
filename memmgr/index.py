@@ -87,9 +87,9 @@ END;
 """
 
 
-def connect() -> sqlite3.Connection:
+def connect(check_same_thread: bool = True) -> sqlite3.Connection:
     C.ensure_dirs()
-    con = sqlite3.connect(C.INDEX_DB)
+    con = sqlite3.connect(C.INDEX_DB, check_same_thread=check_same_thread)
     con.row_factory = sqlite3.Row
     con.executescript(_SCHEMA)
     _migrate(con)

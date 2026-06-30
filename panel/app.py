@@ -6,6 +6,7 @@
 """
 
 import html
+import os
 import sys
 from pathlib import Path
 
@@ -16,6 +17,51 @@ import streamlit as st
 from memmgr import index, lifecycle, retrieval, ops, gitbackup, config as C
 
 st.set_page_config(page_title="Claude 记忆管理", page_icon="🧠", layout="wide")
+
+
+# ---- 性能: 连接复用 + 重操作缓存 ------------------------------------------
+# Streamlit 每次交互整页重跑。这里:
+#   1) 全局复用一个 SQLite 连接(避免每张卡片重新建表/迁移)
+#   2) 重操作(stats/去重/分类/列表)按 index.db 版本缓存, 写操作后自动失效
+
+@st.cache_resource
+def get_conn():
+    return index.connect(check_same_thread=False)
+
+
+def _dbver():
+    """index.db 的版本指纹; 任何写操作 commit 后都会变, 用作缓存键自动失效。"""
+    try:
+        s = os.stat(C.INDEX_DB)
+        return (s.st_mtime_ns, s.st_size)
+    except OSError:
+        return (0, 0)
+
+
+@st.cache_data(show_spinner=False)
+def cached_stats(ver):
+    return index.stats(get_conn())
+
+
+@st.cache_data(show_spinner="计算重复中…")
+def cached_dupes(ver, threshold, max_pairs):
+    pairs = lifecycle.duplicate_pairs(get_conn(), threshold=threshold, max_pairs=max_pairs)
+    return [{"a": dict(p["a"]), "b": dict(p["b"]), "ratio": p["ratio"]} for p in pairs]
+
+
+@st.cache_data(show_spinner="扫描分类建议中…")
+def cached_classify(ver):
+    return lifecycle.classify_all(get_conn(), apply=False)
+
+
+@st.cache_data(show_spinner=False)
+def cached_stale(ver):
+    return [dict(r) for r in lifecycle.stale_candidates(get_conn())]
+
+
+@st.cache_data(show_spinner=False)
+def cached_rows(ver, tier):
+    return [dict(r) for r in index.all_rows(get_conn(), tier=tier)]
 
 # ---- 样式 ------------------------------------------------------------------
 st.markdown("""
@@ -54,7 +100,7 @@ hr {margin:.6rem 0;}
 
 
 def con():
-    return index.connect()
+    return get_conn()
 
 
 def proj_label(p):
@@ -114,6 +160,8 @@ if st.sidebar.button("📸 git 快照", use_container_width=True):
     h = gitbackup.snapshot_commit("manual snapshot from panel")
     toast(f"git 快照: {h or '无变更/git不可用'}")
 st.sidebar.caption(f"📁 {C.INDEX_DB}")
+
+VER = _dbver()   # 本次渲染的数据版本(写操作后变化, 驱动缓存失效)
 
 
 # ---- 记忆卡片 --------------------------------------------------------------
@@ -205,8 +253,7 @@ def render_card(r, ctx=""):
 
 # ================= 页面 =====================================================
 if page == "总览 Dashboard":
-    c = con()
-    s = index.stats(c)
+    s = cached_stats(VER)
     st.title("总览")
     m = st.columns(4)
     m[0].metric("记忆总数", s["total"])
@@ -215,14 +262,19 @@ if page == "总览 Dashboard":
     m[3].metric("⚪ 回收站", s["by_tier"].get("trash", 0))
 
     st.subheader("健康度")
-    stale = lifecycle.stale_candidates(c)
-    dupes = lifecycle.duplicate_pairs(c, max_pairs=100)
-    todos = [r for r in index.all_rows(c, tier=C.STATUS_ACTIVE) if r["nature"] == "todo"]
+    stale = cached_stale(VER)
+    todos = [r for r in cached_rows(VER, C.STATUS_ACTIVE) if r["nature"] == "todo"]
     h = st.columns(4)
     h[0].metric("🔒 已锁定", s["pinned"])
     h[1].metric("⏳ 建议归档", len(stale))
     h[2].metric("📝 待办", len(todos))
-    h[3].metric("👯 疑似重复", len(dupes))
+    if st.session_state.get("_show_dupes"):
+        dupes = cached_dupes(VER, 0.82, 100)
+        h[3].metric("👯 疑似重复", len(dupes))
+    else:
+        h[3].metric("👯 疑似重复", "—")
+        h[3].button("计算", key="calc_dupes",
+                    on_click=lambda: st.session_state.__setitem__("_show_dupes", True))
 
     st.divider()
     col1, col2 = st.columns([3, 2])
@@ -244,9 +296,8 @@ if page == "总览 Dashboard":
 
 
 elif page == "待办 TODO":
-    c = con()
     st.title("📝 待办 TODO")
-    rows = [r for r in index.all_rows(c, tier=C.STATUS_ACTIVE) if r["nature"] == "todo"]
+    rows = [r for r in cached_rows(VER, C.STATUS_ACTIVE) if r["nature"] == "todo"]
     st.caption(f"{len(rows)} 条待办。完成后点「✅ 完成」即归档(可还原)，不再污染日常召回。")
     for r in rows:
         render_card(r, ctx="todo")
@@ -256,7 +307,7 @@ elif page == "分类建议":
     c = con()
     st.title("分类建议")
     st.caption("基于标题/描述/正文关键词推断 nature 与 volatility。建议供参考，可逐条或批量采纳。")
-    sugg = lifecycle.classify_all(c, apply=False)
+    sugg = cached_classify(VER)
     st.metric("待采纳建议", len(sugg))
     if sugg:
         with st.expander("⚙️ 批量采纳全部建议（先自动 git 快照）"):
@@ -288,7 +339,7 @@ elif page == "检索 / 浏览":
     st.title("检索 / 浏览")
     q = st.text_input("🔎 跨项目检索（留空=按过滤条件浏览）", "")
     fcol = st.columns(4)
-    s = index.stats(c)
+    s = cached_stats(VER)
     projects = ["(全部)"] + list(s["by_project"].keys())
     proj = fcol[0].selectbox("项目", projects, format_func=lambda p: p if p == "(全部)" else proj_label(p))
     typ = fcol[1].selectbox("类型", ["(全部)", "user", "feedback", "project", "reference"])
@@ -305,7 +356,7 @@ elif page == "检索 / 浏览":
         for h in hits:
             render_card(h.row, ctx="search")
     else:
-        rows = index.all_rows(c, tier=C.STATUS_ACTIVE)
+        rows = cached_rows(VER, C.STATUS_ACTIVE)
         if pf:
             rows = [r for r in rows if r["project"] in pf]
         if tf:
@@ -322,12 +373,12 @@ elif page == "归档 / 回收站":
     st.title("归档 / 回收站")
     tab1, tab2 = st.tabs(["📥 归档区", "🗑 回收站"])
     with tab1:
-        rows = index.all_rows(c, tier=C.STATUS_ARCHIVED)
+        rows = cached_rows(VER, C.STATUS_ARCHIVED)
         st.caption(f"{len(rows)} 条归档。归档不丢，强命中会自动复活；也可手动还原。")
         for r in rows:
             render_card(r, ctx="arch")
     with tab2:
-        rows = index.all_rows(c, tier=C.STATUS_TRASH)
+        rows = cached_rows(VER, C.STATUS_TRASH)
         st.caption(f"{len(rows)} 条在回收站。保留期 {C.TRASH_RETENTION_DAYS} 天，永久删除需逐条确认。")
         if rows:
             with st.expander("⚠️ 清空已超保留期的回收项"):
@@ -341,10 +392,9 @@ elif page == "归档 / 回收站":
 
 
 elif page == "去重工作台":
-    c = con()
     st.title("去重工作台")
     thr = st.slider("相似度阈值", 0.70, 0.98, 0.82, 0.02)
-    pairs = lifecycle.duplicate_pairs(c, threshold=thr)
+    pairs = cached_dupes(VER, thr, 200)
     st.caption(f"{len(pairs)} 对疑似重复。合并 = 归档其中一条（保留另一条），原件进归档区可还原。")
     for i, p in enumerate(pairs):
         a, b = p["a"], p["b"]
