@@ -26,7 +26,14 @@ st.set_page_config(page_title="Claude 记忆管理", page_icon="🧠", layout="w
 
 @st.cache_resource
 def get_conn():
-    return index.connect(check_same_thread=False)
+    # 自包含开连接(不依赖 index.connect 的签名, 避免热重载下模块缓存导致的不一致)
+    import sqlite3
+    C.ensure_dirs()
+    c = sqlite3.connect(C.INDEX_DB, check_same_thread=False)
+    c.row_factory = sqlite3.Row
+    c.executescript(index._SCHEMA)
+    index._migrate(c)
+    return c
 
 
 def _dbver():
