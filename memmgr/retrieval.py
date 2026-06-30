@@ -7,6 +7,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
+from datetime import date, datetime
 
 from . import config as C
 
@@ -29,6 +30,40 @@ _TERM_SPLIT = re.compile(r"[\s,，。、;；:：/]+")
 
 def _terms(query: str) -> list[str]:
     return [t for t in _TERM_SPLIT.split(query.strip()) if t]
+
+
+def _parse_date(s) -> date | None:
+    if not s:
+        return None
+    try:
+        return datetime.strptime(str(s)[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _freshness_date(row) -> date | None:
+    """记忆的"新鲜度"日期: last_accessed / created_at / 文件 mtime 里最新的一个。"""
+    cands = [_parse_date(row["last_accessed"]), _parse_date(row["created_at"])]
+    try:
+        mt = row["mtime"]
+        if mt:
+            cands.append(datetime.fromtimestamp(float(mt)).date())
+    except (KeyError, IndexError, ValueError, OSError, TypeError):
+        pass
+    cands = [d for d in cands if d]
+    return max(cands) if cands else None
+
+
+def _recency_mult(row, today: date) -> float:
+    """recency 乘性因子 ∈ [RECENCY_FLOOR, 1.0]。越新越接近 1, 越旧越接近下限。"""
+    if C.RECENCY_PIN_EXEMPT and row["pinned"]:
+        return 1.0
+    d = _freshness_date(row)
+    if d is None:
+        return 1.0
+    age = max(0, (today - d).days)
+    factor = 0.5 ** (age / C.RECENCY_HALFLIFE_DAYS)
+    return C.RECENCY_FLOOR + (1.0 - C.RECENCY_FLOOR) * factor
 
 
 def _match_expr(terms: list[str]) -> str:
@@ -126,6 +161,11 @@ def search(
         if h.row["pinned"]:
             h.score += 2.0
         h.score += float(h.row["confidence"] or 0) * 0.5
+
+    # recency 衰减(乘性, 带下限): 旧/久未碰的记忆排名下沉, 但不抹掉强相关
+    today = datetime.now().date()
+    for h in hits.values():
+        h.score *= _recency_mult(h.row, today)
 
     ranked = sorted(hits.values(), key=lambda h: h.score, reverse=True)[:top_k]
 

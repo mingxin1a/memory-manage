@@ -54,6 +54,22 @@ class Memory:
         return extract_links(self.body)
 
 
+def clean_truncate(text: str, max_chars: int) -> tuple[str, bool]:
+    """把文本截到 max_chars 以内, 尽量在段落/句子/空格边界断开。
+
+    返回 (片段, 是否被截断)。用于大记忆"引子"注入, 避免拦腰截断。
+    """
+    text = (text or "").strip()
+    if len(text) <= max_chars:
+        return text, False
+    cut = text[:max_chars]
+    for sep in ["\n\n", "\n", "。", "！", "？", ". ", "; ", "；", "，", ", ", " "]:
+        idx = cut.rfind(sep)
+        if idx > max_chars * 0.5:
+            return cut[:idx + len(sep)].strip(), True
+    return cut.strip(), True
+
+
 def extract_links(body: str) -> list[str]:
     """从正文里抽出所有 [[name]] 链接的 slug。"""
     seen: list[str] = []

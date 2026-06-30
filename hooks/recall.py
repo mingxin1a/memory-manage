@@ -88,14 +88,25 @@ def main():
         except Exception:
             pass
 
+        from memmgr import store
+
         lines = ["# 相关记忆 (memmgr 动态召回)\n"]
         for r in chosen:
             scope = "🌐" if r["scope"] == "global" else "📁"
+            # 摘要层: 标题 + 描述(人工精炼的一句话)
             lines.append(f"- {scope} **{r['name']}**: {r['description']}")
+            # 明细层: 小记忆整条给; 大记忆只给干净截断的"引子" + 指向原文
             body = (r["body"] or "").strip()
-            if body:
-                snippet = body[:600]
-                lines.append(f"  {snippet}")
+            if not body:
+                continue
+            if len(body) <= C.INLINE_FULL_CHARS:
+                lines.append(f"  {body}")
+            else:
+                lead, truncated = store.clean_truncate(body, C.LEAD_CHARS)
+                lines.append(f"  {lead}")
+                if truncated:
+                    lines.append(
+                        f"  …(完整 {len(body)} 字符, 需要细节用 Read 打开: {r['path']})")
         context = "\n".join(lines)
 
         out = {

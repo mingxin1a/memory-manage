@@ -42,6 +42,16 @@ TRASH_RETENTION_DAYS = 30                        # 回收站保留期, 之后才
 DEFAULT_TOP_K = 8
 LINK_EXPAND_HOPS = 1                             # [[link]] 沿边扩展跳数
 
+# recency 衰减: 越旧/越久没碰的记忆召回分越低(乘性, 带下限, 不抹掉强相关)
+# 取 last_accessed / created_at / 文件 mtime 里最新的一个当"新鲜度"
+RECENCY_HALFLIFE_DAYS = 90                       # 每过这么多天, 衰减因子减半
+RECENCY_FLOOR = 0.5                              # 衰减下限(再旧也保留这个比例的分)
+RECENCY_PIN_EXEMPT = True                        # pinned 记忆不衰减
+
+# 大记忆"摘要 + 明细两层"注入
+INLINE_FULL_CHARS = 800                          # 正文 <= 此长度则整条注入
+LEAD_CHARS = 500                                 # 超长记忆只注入这么长的"引子"
+
 
 def ensure_dirs() -> None:
     """确保本工具的数据目录存在。"""

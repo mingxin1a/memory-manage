@@ -36,6 +36,14 @@ Claude Code 的记忆按项目分散存（`~/.claude/projects/<proj>/memory/*.md
 - 短词/补召回走 LIKE 兜底
 - 元数据过滤(project/scope/type/tier) + pinned/confidence 微调
 - `[[link]]` 图扩展一跳，补"语义不近但强相关"的记忆
+- **recency 衰减**：取 `last_accessed/created_at/mtime` 里最新的当"新鲜度"，
+  按半衰期(默认 90 天)做乘性衰减 ∈ [0.5, 1.0]，旧/久未碰的下沉但不抹掉强相关；
+  pinned 免疫。解决"同一事实多版本，旧版本不该和新版本平起平坐"。
+
+### 注入：摘要 + 明细两层
+召回 hook 不再整条灌大记忆：标题 + 描述(人工精炼一句话)是摘要层；正文 ≤800 字整条给，
+超长则只给干净截断(段落/句子边界)的"引子" + 指向原文的 Read 提示。
+单条 11K 字符的 hub 记忆从灌 11K 降到 ~500 字 + 指针，token 省一个量级。
 
 ### 作用域：三层
 - `project`：仅本项目；`global`(存 `~/.claude/memory/`)：所有项目召回；`shared`：按 tag 共享
@@ -75,3 +83,5 @@ active ──(久未命中/低置信/被合并)──▶ archived ──(确认/
 - 关系图可视化页
 - 合并(merge)而非仅归档其一：生成摘要 + `derived_from` 链接
 - LLM 抽取默认开启 + 更细的质量闸
+- 版本链 `supersedes`：同一事实新版本自动取代旧版本（recency 之上更显式）
+- volatility/TTL 维度、fact/todo/decision 性质维度、实体图
