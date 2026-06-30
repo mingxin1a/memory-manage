@@ -54,15 +54,31 @@ def _freshness_date(row) -> date | None:
     return max(cands) if cands else None
 
 
+def _halflife_for(row) -> float | None:
+    """按 volatility 取 recency 半衰期: stable 不衰减(None), volatile 衰减快。"""
+    vol = (row["volatility"] if "volatility" in row.keys() else None) or C.VOL_NORMAL
+    if vol == C.VOL_STABLE:
+        return None
+    if vol == C.VOL_VOLATILE:
+        return C.VOLATILE_HALFLIFE_DAYS
+    return C.RECENCY_HALFLIFE_DAYS
+
+
 def _recency_mult(row, today: date) -> float:
-    """recency 乘性因子 ∈ [RECENCY_FLOOR, 1.0]。越新越接近 1, 越旧越接近下限。"""
+    """recency 乘性因子 ∈ [RECENCY_FLOOR, 1.0]。越新越接近 1, 越旧越接近下限。
+
+    stable 记忆不衰减; volatile 半衰期短, 旧的易变状态迅速下沉。
+    """
     if C.RECENCY_PIN_EXEMPT and row["pinned"]:
+        return 1.0
+    halflife = _halflife_for(row)
+    if halflife is None:
         return 1.0
     d = _freshness_date(row)
     if d is None:
         return 1.0
     age = max(0, (today - d).days)
-    factor = 0.5 ** (age / C.RECENCY_HALFLIFE_DAYS)
+    factor = 0.5 ** (age / halflife)
     return C.RECENCY_FLOOR + (1.0 - C.RECENCY_FLOOR) * factor
 
 

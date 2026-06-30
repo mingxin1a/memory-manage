@@ -45,6 +45,18 @@ Claude Code 的记忆按项目分散存（`~/.claude/projects/<proj>/memory/*.md
 超长则只给干净截断(段落/句子边界)的"引子" + 指向原文的 Read 提示。
 单条 11K 字符的 hub 记忆从灌 11K 降到 ~500 字 + 指针，token 省一个量级。
 
+### 维度：volatility(波动性) 与 nature(性质)
+逻辑分类叠加在 type/scope 之上(不动物理结构, 一条记忆可多维)。
+- **volatility** = stable | normal | volatile：
+  - 驱动差异化 **TTL**(stale 检测)：stable 免疫；volatile 短(默认 14 天)；normal 默认 90 天
+  - 驱动差异化 **recency 半衰期**：stable 不衰减；volatile 衰减快(默认 14 天)；normal 90 天
+  - 解决"架构约定"和"6-24 当前快照"不该同样对待
+- **nature** = fact | todo | decision：
+  - todo 有独立生命周期：面板独立视图 + 「完成」即归档，不污染日常召回
+  - decision 通常稳定且重要
+- **启发式推断**(`classify`)：按关键词/日期名给"建议"，dry-run 默认，可逐条或批量采纳
+  (写入前自动 git 快照, 每条可 undo)。实测 609 条给出 393 条合理建议。
+
 ### 作用域：三层
 - `project`：仅本项目；`global`(存 `~/.claude/memory/`)：所有项目召回；`shared`：按 tag 共享
 - `promote` 一键把项目记忆提升为全局
@@ -84,4 +96,4 @@ active ──(久未命中/低置信/被合并)──▶ archived ──(确认/
 - 合并(merge)而非仅归档其一：生成摘要 + `derived_from` 链接
 - LLM 抽取默认开启 + 更细的质量闸
 - 版本链 `supersedes`：同一事实新版本自动取代旧版本（recency 之上更显式）
-- volatility/TTL 维度、fact/todo/decision 性质维度、实体图
+- 实体图（按表/服务/文件名反查相关记忆）

@@ -216,6 +216,59 @@ def set_tags(con, path, tags: list[str]):
                          "set_tags", note=",".join(tags))
 
 
+# ---- 维度: volatility / nature ---------------------------------------------
+
+def set_volatility(con, path, value: str):
+    if value not in C.ALL_VOLATILITY:
+        raise ValueError(f"volatility 必须是 {C.ALL_VOLATILITY}")
+    return _inplace_edit(con, path, lambda m: setattr(m, "volatility", value),
+                         "set_volatility", note=value)
+
+
+def set_nature(con, path, value: str):
+    if value not in C.ALL_NATURE:
+        raise ValueError(f"nature 必须是 {C.ALL_NATURE}")
+    return _inplace_edit(con, path, lambda m: setattr(m, "nature", value),
+                         "set_nature", note=value)
+
+
+def complete_todo(con, path, reason="TODO 完成, 归档"):
+    """把一条 todo 标记完成 → 直接归档(降级, 可还原)。"""
+    return _change_tier(con, path, C.STATUS_ARCHIVED, reason)
+
+
+def classify_all(con, apply: bool = False) -> list[dict]:
+    """对 active 记忆跑启发式推断, 返回与当前值不同的"建议"。
+
+    apply=False 只返回建议(dry-run); apply=True 写入 frontmatter(逐条记日志, 可 undo)。
+    调用方在 apply 前应先 git 快照。
+    """
+    suggestions = []
+    for r in index.all_rows(con, tier=C.STATUS_ACTIVE):
+        mem = store.parse_file(Path(r["path"]), r["project"])
+        inf_nat = store.infer_nature(mem)
+        inf_vol = store.infer_volatility(mem)
+        chg = {}
+        if inf_nat != (r["nature"] or C.NAT_FACT):
+            chg["nature"] = inf_nat
+        if inf_vol != (r["volatility"] or C.VOL_NORMAL):
+            chg["volatility"] = inf_vol
+        if not chg:
+            continue
+        suggestions.append({"path": r["path"], "name": r["name"],
+                            "current": {"nature": r["nature"], "volatility": r["volatility"]},
+                            "suggest": chg})
+        if apply:
+            def mut(m, c=chg):
+                if "nature" in c:
+                    m.nature = c["nature"]
+                if "volatility" in c:
+                    m.volatility = c["volatility"]
+            _inplace_edit(con, r["path"], mut, "classify",
+                          note=",".join(f"{k}={v}" for k, v in chg.items()))
+    return suggestions
+
+
 # ---- undo ------------------------------------------------------------------
 
 def undo(con, op_id: str | None = None) -> dict | None:
@@ -244,17 +297,49 @@ def undo(con, op_id: str | None = None) -> dict | None:
 
 # ---- 建议(只读, 不自动执行) ----------------------------------------------
 
-def stale_candidates(con, days: int = C.STALE_DAYS) -> list[sqlite3.Row]:
-    """长期未命中、未锁定的 active 记忆 → 建议归档(不自动执行)。"""
-    cutoff = (datetime.now().date() - timedelta(days=days)).isoformat()
+def _ttl_for(row) -> int | None:
+    """按 volatility 取 TTL(天): stable 永不过期(None), volatile 短, 其余默认。"""
+    vol = (row["volatility"] or C.VOL_NORMAL)
+    if vol == C.VOL_STABLE:
+        return None
+    if vol == C.VOL_VOLATILE:
+        return C.VOLATILE_TTL_DAYS
+    return C.STALE_DAYS
+
+
+def _ref_date(row) -> str:
+    """记忆的"最近活跃"日期: last_accessed / created_at / 文件 mtime 里最新的(ISO)。
+
+    与 recency 一致用 mtime 兜底 —— 多数记忆没写 last_accessed/created_at。
+    """
+    cands = [row["last_accessed"] or "", row["created_at"] or ""]
+    try:
+        mt = row["mtime"]
+        if mt:
+            cands.append(datetime.fromtimestamp(float(mt)).date().isoformat())
+    except (KeyError, IndexError, ValueError, OSError, TypeError):
+        pass
+    cands = [c for c in cands if c]
+    return max(cands) if cands else ""
+
+
+def stale_candidates(con) -> list[sqlite3.Row]:
+    """超过各自 TTL 没活跃、未锁定的 active 记忆 → 建议归档(不自动执行)。
+
+    TTL 按 volatility 区分: stable 免疫; volatile 短(默认 14 天); normal 默认 90 天。
+    "活跃时间"取 last_accessed/created_at/mtime 最新者。
+    """
+    today = datetime.now().date()
     out = []
     for r in index.all_rows(con, tier=C.STATUS_ACTIVE):
         if r["pinned"]:
             continue
-        la = r["last_accessed"] or ""
-        if la and la < cutoff:
-            out.append(r)
-        elif not la and (r["created_at"] or "") and r["created_at"] < cutoff:
+        ttl = _ttl_for(r)
+        if ttl is None:
+            continue
+        cutoff = (today - timedelta(days=ttl)).isoformat()
+        ref = _ref_date(r)
+        if ref and ref < cutoff:
             out.append(r)
     return out
 

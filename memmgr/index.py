@@ -17,6 +17,7 @@ from .store import Memory
 _COLUMNS = [
     "path", "project", "name", "description", "type",
     "status", "scope", "pinned", "confidence", "tags",
+    "volatility", "nature",
     "created_at", "last_accessed", "access_count",
     "archived_at", "trashed_at", "derived_from", "superseded_by",
     "reason", "mtime", "tier", "links", "body",
@@ -35,6 +36,8 @@ CREATE TABLE IF NOT EXISTS memories (
     pinned        INTEGER DEFAULT 0,
     confidence    REAL DEFAULT 0.8,
     tags          TEXT,
+    volatility    TEXT DEFAULT 'normal',
+    nature        TEXT DEFAULT 'fact',
     created_at    TEXT,
     last_accessed TEXT,
     access_count  INTEGER DEFAULT 0,
@@ -89,7 +92,18 @@ def connect() -> sqlite3.Connection:
     con = sqlite3.connect(C.INDEX_DB)
     con.row_factory = sqlite3.Row
     con.executescript(_SCHEMA)
+    _migrate(con)
     return con
+
+
+def _migrate(con: sqlite3.Connection) -> None:
+    """对已存在的旧索引补齐新增列(CREATE TABLE IF NOT EXISTS 不会加列)。"""
+    have = {r["name"] for r in con.execute("PRAGMA table_info(memories)")}
+    for col, ddl in (("volatility", "TEXT DEFAULT 'normal'"),
+                     ("nature", "TEXT DEFAULT 'fact'")):
+        if col not in have:
+            con.execute(f"ALTER TABLE memories ADD COLUMN {col} {ddl}")
+    con.commit()
 
 
 def _row_values(mem: Memory, tier: str) -> list:
@@ -238,6 +252,12 @@ def stats(con: sqlite3.Connection) -> dict:
         (C.STATUS_ACTIVE,))}
     out["by_scope"] = {r[0]: r[1] for r in con.execute(
         "SELECT scope, COUNT(*) FROM memories WHERE tier=? GROUP BY scope",
+        (C.STATUS_ACTIVE,))}
+    out["by_nature"] = {r[0]: r[1] for r in con.execute(
+        "SELECT nature, COUNT(*) FROM memories WHERE tier=? GROUP BY nature",
+        (C.STATUS_ACTIVE,))}
+    out["by_volatility"] = {r[0]: r[1] for r in con.execute(
+        "SELECT volatility, COUNT(*) FROM memories WHERE tier=? GROUP BY volatility",
         (C.STATUS_ACTIVE,))}
     out["pinned"] = con.execute(
         "SELECT COUNT(*) FROM memories WHERE pinned=1 AND tier=?",

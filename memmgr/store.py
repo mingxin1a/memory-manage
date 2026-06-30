@@ -35,6 +35,9 @@ class Memory:
     pinned: bool = False
     confidence: float = 0.8
     tags: list[str] = field(default_factory=list)
+    # ---- 维度 ----
+    volatility: str = C.VOL_NORMAL    # stable | normal | volatile
+    nature: str = C.NAT_FACT          # fact | todo | decision
     # ---- 时间 / 统计 ----
     created_at: str = ""
     last_accessed: str = ""
@@ -85,6 +88,7 @@ _MANAGED_META = {
     "type", "status", "scope", "pinned", "confidence", "tags",
     "created_at", "last_accessed", "access_count", "archived_at",
     "trashed_at", "derived_from", "superseded_by", "reason",
+    "volatility", "nature",
 }
 
 
@@ -122,6 +126,8 @@ def parse_file(path: Path, project: str) -> Memory:
         pinned=bool(meta.get("pinned", False)),
         confidence=_as_float(meta.get("confidence"), 0.8),
         tags=_as_list(meta.get("tags")),
+        volatility=str(meta.get("volatility") or C.VOL_NORMAL),
+        nature=str(meta.get("nature") or C.NAT_FACT),
         created_at=str(meta.get("created_at") or ""),
         last_accessed=str(meta.get("last_accessed") or ""),
         access_count=int(meta.get("access_count") or 0),
@@ -148,6 +154,10 @@ def dump(mem: Memory) -> str:
     if mem.pinned:
         meta["pinned"] = True
     meta["confidence"] = round(mem.confidence, 3)
+    if mem.volatility and mem.volatility != C.VOL_NORMAL:
+        meta["volatility"] = mem.volatility
+    if mem.nature and mem.nature != C.NAT_FACT:
+        meta["nature"] = mem.nature
     if mem.tags:
         meta["tags"] = mem.tags
     if mem.created_at:
@@ -287,6 +297,46 @@ def _as_opt_str(v: Any) -> str | None:
     if v is None or v == "":
         return None
     return str(v)
+
+
+# ---- 启发式推断(只给"建议", 默认不自动写入) --------------------------------
+
+# nature 关键词
+_TODO_MARKERS = ("待办", "待装", "待补", "待确认", "待办清单", "todo", "fixme",
+                 "下一步", "未完成", "尚未", "[ ]", "- [ ]", "回头", "后续要")
+_DECISION_MARKERS = ("决定", "决策", "方案 ", "方案：", "方案:", "选型", "采用",
+                     "拍板", "落地方案", "decision", "权衡", "取舍")
+# volatility 关键词
+_VOLATILE_MARKERS = ("快照", "snapshot", "当前", "临时", "本次", "进度", "收尾",
+                     "session", "今天", "状态机当前", "最新提交", "现状")
+_STABLE_MARKERS = ("架构", "约定", "convention", "规范", "schema", "表结构",
+                   "原则", "拓扑", "topology", "字典", "规则", "设计决策",
+                   "目录结构", "命名规范")
+_DATE_IN_NAME = re.compile(r"20\d{2}[-_]?\d{2}[-_]?\d{2}")
+_COMMIT_HASH = re.compile(r"\b[0-9a-f]{7,40}\b")
+
+
+def infer_nature(mem: "Memory") -> str:
+    text = f"{mem.name} {mem.description} {mem.body[:500]}".lower()
+    if any(m in text for m in _TODO_MARKERS):
+        return C.NAT_TODO
+    if any(m in text for m in _DECISION_MARKERS):
+        return C.NAT_DECISION
+    return C.NAT_FACT
+
+
+def infer_volatility(mem: "Memory") -> str:
+    name_desc = f"{mem.name} {mem.description}".lower()
+    text = f"{name_desc} {mem.body[:500]}".lower()
+    # 名字里带日期/快照/当前 → 多半是易变状态
+    if (_DATE_IN_NAME.search(mem.name) or
+            any(m in name_desc for m in _VOLATILE_MARKERS)):
+        return C.VOL_VOLATILE
+    if any(m in text for m in _STABLE_MARKERS):
+        return C.VOL_STABLE
+    if any(m in text for m in _VOLATILE_MARKERS):
+        return C.VOL_VOLATILE
+    return C.VOL_NORMAL
 
 
 def to_row(mem: Memory, tier: str) -> dict[str, Any]:

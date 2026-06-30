@@ -37,7 +37,8 @@ if "_toast" in st.session_state:
 st.sidebar.title("🧠 记忆管理")
 page = st.sidebar.radio(
     "视图",
-    ["总览 Dashboard", "检索 / 浏览", "归档 / 回收站", "去重工作台", "操作日志"],
+    ["总览 Dashboard", "检索 / 浏览", "待办 TODO", "分类建议",
+     "归档 / 回收站", "去重工作台", "操作日志"],
 )
 
 st.sidebar.divider()
@@ -56,12 +57,31 @@ def render_card(r, ctx=""):
     c = con()
     pin = "🔒 " if r["pinned"] else ""
     scope_badge = {"global": "🌐", "shared": "🔗", "project": "📁"}.get(r["scope"], "")
+    nat_badge = {"todo": "📝todo", "decision": "⚖️decision", "fact": ""}.get(r["nature"], "")
+    vol_badge = {"stable": "🟢stable", "volatile": "🟡volatile", "normal": ""}.get(r["volatility"], "")
+    extra = "  ".join(b for b in (nat_badge, vol_badge) if b)
     with st.container(border=True):
         st.markdown(f"**{pin}{scope_badge} {r['name']}**  ·  `{r['type']}`  ·  "
-                    f"{proj_label(r['project'])}")
+                    f"{proj_label(r['project'])}  {extra}")
         st.caption(r["description"] or "(无描述)")
-        with st.expander("正文 / 详情"):
+        with st.expander("正文 / 详情 / 维度"):
             st.code(r["path"], language=None)
+            key = f"dim_{ctx}_{r['path']}"
+            dc = st.columns(2)
+            nat = dc[0].selectbox("性质 nature", list(C.ALL_NATURE),
+                                  index=list(C.ALL_NATURE).index(r["nature"]) if r["nature"] in C.ALL_NATURE else 0,
+                                  key="n_" + key)
+            vol = dc[1].selectbox("波动性 volatility", list(C.ALL_VOLATILITY),
+                                  index=list(C.ALL_VOLATILITY).index(r["volatility"]) if r["volatility"] in C.ALL_VOLATILITY else 1,
+                                  key="v_" + key)
+            if nat != r["nature"] or vol != r["volatility"]:
+                if st.button("💾 保存维度", key="sd_" + key):
+                    if nat != r["nature"]:
+                        lifecycle.set_nature(c, r["path"], nat)
+                    if vol != r["volatility"]:
+                        # 原地编辑, 路径不变
+                        lifecycle.set_volatility(c, r["path"], vol)
+                    toast("维度已更新"); st.rerun()
             st.markdown(r["body"][:3000] or "_(空)_")
             if r["reason"]:
                 st.info(f"最近降级原因: {r['reason']}")
@@ -86,6 +106,9 @@ def render_card(r, ctx=""):
             if r["scope"] != "global":
                 if cols[3].button("🌐 提升全局", key="pg_" + key):
                     lifecycle.promote_to_global(c, r["path"]); toast("已提升为全局记忆"); st.rerun()
+            if r["nature"] == "todo":
+                if cols[4].button("✅ 完成", key="td_" + key):
+                    lifecycle.complete_todo(c, r["path"]); toast("TODO 完成, 已归档"); st.rerun()
         elif tier == C.STATUS_ARCHIVED:
             if cols[0].button("♻️ 还原", key="re_" + key):
                 lifecycle.restore(c, r["path"]); toast("已还原到 active"); st.rerun()
@@ -131,9 +154,45 @@ if page == "总览 Dashboard":
         data = {proj_label(k): v for k, v in s["by_project"].items()}
         st.bar_chart(data)
     with col2:
-        st.subheader("按类型 / 作用域")
-        st.bar_chart(s["by_type"])
-        st.write("作用域:", s["by_scope"])
+        st.subheader("按类型 / 性质 / 波动性")
+        st.write("类型:", s["by_type"])
+        st.write("性质 nature:", s.get("by_nature", {}))
+        st.write("波动性 volatility:", s.get("by_volatility", {}))
+        st.write("作用域 scope:", s["by_scope"])
+
+
+elif page == "待办 TODO":
+    c = con()
+    st.header("待办 TODO")
+    rows = [r for r in index.all_rows(c, tier=C.STATUS_ACTIVE) if r["nature"] == "todo"]
+    st.caption(f"{len(rows)} 条待办。完成后点「✅ 完成」即归档(可还原), 不再污染日常召回。")
+    for r in rows:
+        render_card(r, ctx="todo")
+
+
+elif page == "分类建议":
+    c = con()
+    st.header("分类建议 (启发式)")
+    st.caption("基于标题/描述/正文的关键词推断 nature 与 volatility。建议供参考, 可逐条或批量采纳。")
+    sugg = lifecycle.classify_all(c, apply=False)
+    st.write(f"与当前值不同的建议: **{len(sugg)}** 条")
+    if sugg:
+        with st.expander("⚙️ 批量采纳全部建议(先自动 git 快照)"):
+            st.write("会逐条写入 frontmatter, 每条可在操作日志里单独 undo。")
+            if st.button("批量采纳"):
+                gitbackup.snapshot_commit("before classify apply (panel)")
+                lifecycle.classify_all(c, apply=True)
+                toast(f"已采纳 {len(sugg)} 条"); st.rerun()
+        for i, sug in enumerate(sugg[:200]):
+            with st.container(border=True):
+                st.markdown(f"**{sug['name']}**")
+                st.caption(f"{sug['current']} → {sug['suggest']}")
+                if st.button("采纳此条", key=f"sg_{i}_{sug['path']}"):
+                    if "nature" in sug["suggest"]:
+                        lifecycle.set_nature(c, sug["path"], sug["suggest"]["nature"])
+                    if "volatility" in sug["suggest"]:
+                        lifecycle.set_volatility(c, sug["path"], sug["suggest"]["volatility"])
+                    toast("已采纳"); st.rerun()
 
 
 elif page == "检索 / 浏览":

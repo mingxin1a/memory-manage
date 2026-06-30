@@ -129,10 +129,42 @@ def cmd_dupes(args):
 def cmd_stale(args):
     con = _con()
     rows = lifecycle.stale_candidates(con)
-    print(f"建议归档(久未命中, 未锁定) {len(rows)} 条:")
+    print(f"建议归档(超 TTL 未命中, 未锁定; stable 免疫) {len(rows)} 条:")
     for r in rows[:args.k]:
-        print(f"  {r['name']:<40.40} last={r['last_accessed'] or '?'} "
+        print(f"  [{r['volatility']:8}] {r['name']:<36.36} "
+              f"last={r['last_accessed'] or r['created_at'] or '?'} "
               f"| {C.decode_project_id(r['project'])}")
+
+
+def cmd_volatility(args):
+    con = _con()
+    print(lifecycle.set_volatility(con, args.path, args.value))
+
+
+def cmd_nature(args):
+    con = _con()
+    print(lifecycle.set_nature(con, args.path, args.value))
+
+
+def cmd_todos(args):
+    con = _con()
+    rows = [r for r in index.all_rows(con, tier=C.STATUS_ACTIVE)
+            if r["nature"] == C.NAT_TODO]
+    print(f"待办(todo) {len(rows)} 条:")
+    for r in rows[:args.k]:
+        print(f"  {r['name']:<40.40} | {C.decode_project_id(r['project'])}")
+        print(f"      {r['description'][:80]}")
+
+
+def cmd_classify(args):
+    con = _con()
+    if args.apply:
+        gitbackup.snapshot_commit("before classify --apply")
+    sugg = lifecycle.classify_all(con, apply=args.apply)
+    verb = "已写入" if args.apply else "建议(加 --apply 写入)"
+    print(f"{verb} {len(sugg)} 条分类:")
+    for s in sugg[:args.k]:
+        print(f"  {s['name']:<40.40} {s['current']} -> {s['suggest']}")
 
 
 def cmd_undo(args):
@@ -183,6 +215,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("dupes"); sp.add_argument("-k", type=int, default=30); sp.set_defaults(func=cmd_dupes)
     sp = sub.add_parser("stale"); sp.add_argument("-k", type=int, default=30); sp.set_defaults(func=cmd_stale)
+
+    sp = sub.add_parser("volatility"); sp.add_argument("path")
+    sp.add_argument("value", choices=C.ALL_VOLATILITY); sp.set_defaults(func=cmd_volatility)
+    sp = sub.add_parser("nature"); sp.add_argument("path")
+    sp.add_argument("value", choices=C.ALL_NATURE); sp.set_defaults(func=cmd_nature)
+    sp = sub.add_parser("todos"); sp.add_argument("-k", type=int, default=50); sp.set_defaults(func=cmd_todos)
+    sp = sub.add_parser("classify"); sp.add_argument("--apply", action="store_true")
+    sp.add_argument("-k", type=int, default=40); sp.set_defaults(func=cmd_classify)
     sp = sub.add_parser("undo"); sp.add_argument("op_id", nargs="?"); sp.set_defaults(func=cmd_undo)
     sp = sub.add_parser("log"); sp.add_argument("-k", type=int, default=30); sp.set_defaults(func=cmd_log)
     sp = sub.add_parser("snapshot"); sp.add_argument("message"); sp.set_defaults(func=cmd_snapshot)

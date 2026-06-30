@@ -44,7 +44,11 @@ purge <path>          物理删除(仅限回收站)
 pin/unpin <path>      锁定/解锁(锁定免疫自动机制)
 promote <path>        提升为全局记忆(所有项目可召回)
 dupes                 列疑似重复对
-stale                 列建议归档项(久未命中)
+stale                 列建议归档项(超 TTL 未活跃; stable 免疫)
+volatility <path> <stable|normal|volatile>   设波动性
+nature <path> <fact|todo|decision>           设性质
+todos                 列所有待办(todo)
+classify [--apply]    启发式推断 nature/volatility(默认 dry-run)
 undo [op_id]          撤销操作(缺省撤最近一条)
 log                   操作日志
 snapshot <msg>        手动 git 快照

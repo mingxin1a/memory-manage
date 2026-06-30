@@ -38,6 +38,25 @@ SCOPE_SHARED = "shared"
 STALE_DAYS = 90                                  # 超过这么久没命中 → 建议归档
 TRASH_RETENTION_DAYS = 30                        # 回收站保留期, 之后才允许物理删除
 
+# ---- 维度: volatility(波动性) ----
+# stable=稳定事实(架构/约定/schema), 不衰减也不因时间过期
+# volatile=易变状态(快照/当前进度/临时), 短期到期、快速衰减
+VOL_STABLE = "stable"
+VOL_NORMAL = "normal"
+VOL_VOLATILE = "volatile"
+ALL_VOLATILITY = (VOL_STABLE, VOL_NORMAL, VOL_VOLATILE)
+
+VOLATILE_TTL_DAYS = 14                            # volatile 超过此天数没命中 → 建议归档
+# 差异化 recency 半衰期(天): stable 不衰减(None), normal/volatile 各自半衰期
+VOLATILE_HALFLIFE_DAYS = 14
+
+# ---- 维度: nature(性质) ----
+# fact=长期事实, todo=待办(完成即归档), decision=决策(通常稳定且重要)
+NAT_FACT = "fact"
+NAT_TODO = "todo"
+NAT_DECISION = "decision"
+ALL_NATURE = (NAT_FACT, NAT_TODO, NAT_DECISION)
+
 # 召回默认返回条数
 DEFAULT_TOP_K = 8
 LINK_EXPAND_HOPS = 1                             # [[link]] 沿边扩展跳数
